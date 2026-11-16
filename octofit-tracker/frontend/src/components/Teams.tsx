@@ -1,10 +1,11 @@
+import { getJson } from '../api/client.js';
 import { useApiResource } from '../api/useApiResource.js';
 import { CapabilityCard } from './CapabilityCard.js';
 
 type Team = { _id?: string; name: string; mascot?: string; members?: string[] };
 
 export default function Teams() {
-  const resource = useApiResource<{ teams: Team[] }>('/api/teams');
+  const resource = useApiResource(() => getJson<{ teams: Team[] }>('/api/teams'), []);
 
   return (
     <CapabilityCard title="Teams" description="Manage teams and members.">

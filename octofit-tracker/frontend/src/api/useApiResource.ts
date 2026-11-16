@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
-import { getJson } from './client.js';
 
 export type ApiResource<T> = { status: 'loading' } | { status: 'error' } | { status: 'success'; data: T };
 
-export function useApiResource<T>(path: string): ApiResource<T> {
+// Runs the caller's request (made through the shared API client) and tracks loading, error, and success.
+export function useApiResource<T>(load: () => Promise<T>, deps: readonly unknown[]): ApiResource<T> {
   const [resource, setResource] = useState<ApiResource<T>>({ status: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
     setResource({ status: 'loading' });
-    getJson<T>(path)
+    load()
       .then((data) => { if (!cancelled) setResource({ status: 'success', data }); })
       .catch(() => { if (!cancelled) setResource({ status: 'error' }); });
     return () => { cancelled = true; };
-  }, [path]);
+  }, deps);
 
   return resource;
 }

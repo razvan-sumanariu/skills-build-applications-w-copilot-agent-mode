@@ -1,10 +1,11 @@
+import { getJson } from '../api/client.js';
 import { useApiResource } from '../api/useApiResource.js';
 import { CapabilityCard } from './CapabilityCard.js';
 
 type Entry = { teamName: string; totalPoints: number; rank: number };
 
 export default function Leaderboard() {
-  const resource = useApiResource<{ leaderboard: Entry[] }>('/api/leaderboard');
+  const resource = useApiResource(() => getJson<{ leaderboard: Entry[] }>('/api/leaderboard'), []);
 
   return (
     <CapabilityCard title="Leaderboard" description="Compare team point totals.">

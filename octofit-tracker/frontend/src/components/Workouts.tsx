@@ -1,3 +1,4 @@
+import { getJson } from '../api/client.js';
 import { useApiResource } from '../api/useApiResource.js';
 import { CapabilityCard } from './CapabilityCard.js';
 
@@ -7,7 +8,10 @@ type Suggestion = { _id?: string; title: string; focus?: string; minutes?: numbe
 const demoUserEmail = 'mona@example.com';
 
 export default function Workouts() {
-  const resource = useApiResource<{ suggestions: Suggestion[] }>(`/api/workouts/suggestions/${encodeURIComponent(demoUserEmail)}`);
+  const resource = useApiResource(
+    () => getJson<{ suggestions: Suggestion[] }>(`/api/workouts/suggestions/${encodeURIComponent(demoUserEmail)}`),
+    [],
+  );
 
   return (
     <CapabilityCard title="Workout suggestions" description="Recommend workouts from activity patterns.">

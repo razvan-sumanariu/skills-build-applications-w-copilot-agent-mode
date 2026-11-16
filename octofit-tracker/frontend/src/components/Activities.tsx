@@ -1,10 +1,11 @@
+import { getJson } from '../api/client.js';
 import { useApiResource } from '../api/useApiResource.js';
 import { CapabilityCard } from './CapabilityCard.js';
 
 type Activity = { _id?: string; type: string; minutes: number; points: number };
 
 export default function Activities() {
-  const resource = useApiResource<{ activities: Activity[] }>('/api/activities');
+  const resource = useApiResource(() => getJson<{ activities: Activity[] }>('/api/activities'), []);
 
   return (
     <CapabilityCard title="Activities" description="Track student activity minutes and points.">
