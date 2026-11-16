@@ -28,22 +28,26 @@ OctoFit Tracker is a three-tier application for a school fitness program. The st
 
 ## Implementation decisions
 
-Record your plan here before editing code.
+Plan, based on the baseline test run (data 4/5 failing, API 4/4 failing, frontend 15/15 failing). Work test-first in small steps, one tier at a time, in the order data, logic, presentation. Add no authentication.
 
-- Presentation tier decision:
-- Logic tier decision:
-- Data tier decision:
-- Activity tracking approach:
-- Team management approach:
-- Leaderboard approach:
-- Workout suggestions approach:
+- Presentation tier decision: Keep pages in `frontend/src/components` and route all HTTP through the shared `src/api/client.ts` (relative `/api` paths, optional `VITE_API_BASE_URL`). Components only render. Each page shows a `role="status"` loading state, a meaningful empty state, and a `role="alert"` on API failure, then renders the data. The workouts page requests suggestions for a specific user email. Replace the "Implementation pending" placeholders last, one route at a time.
+- Logic tier decision: Keep routes in `routes/api.ts` thin. Put validation and business rules in `services/octofitService.ts`, and have it throw errors carrying an HTTP `status` (400, 404). Handle those and Mongoose `ValidationError`/`CastError` in one error middleware so bad input never becomes a 500. Replace the `501` stubs.
+- Data tier decision: Add `required` validators to the Mongoose models in `backend/src/models`: `User` (`name`, `email`, `fitnessGoal`), `Team` (`name`, `mascot`, `members` array of User refs), `Activity` (`user`, `team`, `type`, `minutes`, `points`, `occurredAt`) and `Workout` (`title`, `focus`, `minutes`, `difficulty`). Keep `src/scripts/seed.ts` idempotent and valid under the stricter schemas. Models hold no business logic.
+- Activity tracking approach: `POST /api/activities` accepts `userId`, `teamId`, `type` and `minutes`. Check each ID with `isValidObjectId` and confirm the user and team exist, otherwise return a 4xx (400 for malformed IDs or minutes, 404 for a missing user or team). Compute `points` from `type` and `minutes`, set `occurredAt` to now, and store `user`, `team`, `type` and `minutes`. `GET` lists activities.
+- Team management approach: `POST /api/teams` returns 400 when `name` is missing or blank and otherwise stores `name`, `mascot` and `members`. `GET` returns teams with `name`, `mascot` and members.
+- Leaderboard approach: Use a Mongo aggregation that groups activities by team and sums `points`. Join to the team name, sort by `totalPoints` descending, and add a 1-based `rank`. Return `{ teamName, totalPoints, rank }` entries. Include teams with no activities (0 points) only if the tests require it.
+- Workout suggestions approach: Look up the user by email and return 404 if none matches. Choose `focus` from the user's goal or their recent activity types. Return matching `Workout` documents, the best match first, each with a `reason` that names the activity or goal (for example, "Based on your recent run activity"). Return `[]`-safe results when there are no recent activities by falling back to the goal.
 
 ## Test plan
 
-Record the commands you run and what each failure means.
+Run the tests after each step and stop at the first red one. Baseline on 2026-11-16: every suite fails except the seed idempotency test.
 
-- Data-tier command: `npm run test:data --prefix octofit-tracker/backend`
-- API command: `npm run test:api --prefix octofit-tracker/backend`
-- Frontend command: `npm test --prefix octofit-tracker/frontend`
-- Backend build command: `npm run build --prefix octofit-tracker/backend`
-- Frontend build command: `npm run build --prefix octofit-tracker/frontend`
+| Step | Command | Baseline failure and what it means |
+| --- | --- | --- |
+| 1. Data tier | `npm run test:data --prefix octofit-tracker/backend` | 4 of 5 fail. The models have no `required` validators, so `validateSync()` returns no errors for `User`, `Team`, `Activity` and `Workout`. The seed test passes and must stay green. |
+| 2. Logic tier | `npm run test:api --prefix octofit-tracker/backend` | 4 of 4 fail. Activity and team creation are `501` stubs, the leaderboard returns `[]`, and workout suggestions lack a `reason`. Fixing a test here means the service or error handling is wrong, not the data tier. |
+| 3. Backend build | `npm run build --prefix octofit-tracker/backend` | Type check and compile. Run after steps 1 and 2 are green. |
+| 4. Presentation tier | `npm test --prefix octofit-tracker/frontend` | 15 of 15 fail. All four routes still render "Implementation pending", with no loading, empty or error states and no data. Mock `fetch` in these tests, so they need no backend. |
+| 5. Frontend build | `npm run build --prefix octofit-tracker/frontend` | Type check and bundle. Run after step 4 is green. |
+
+Order: finish and verify the data tier before the API, and the API before the frontend. Finish with all five commands passing. Confirm the services stay on MongoDB 27017, Express 8000 and Vite 5173.
