@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { createApp } from '../src/app.js';
 import { Activity, Team, User, Workout } from '../src/models/index.js';
 
-let mongo: MongoMemoryReplSet;
+let mongo: MongoMemoryServer;
 const app = createApp();
 
 beforeAll(async () => {
-  mongo = await MongoMemoryReplSet.create();
+  mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
 }, 60_000);
 afterAll(async () => {
@@ -64,7 +64,7 @@ describe('OctoFit API contract', () => {
     expect(listed.body.teams[0].members.map((id: string) => id.toString())).toContain(member._id.toString());
     expect((await User.findById(member._id))?.team?.toString()).toBe(created.body.team._id);
   });
-  it('moves members from their previous team when creating a team', async () => {
+  it('rejects members who already belong to a team', async () => {
     const { user, team: previousTeam } = await createUserAndTeam('Mona', 'mona@example.com', 'Mona');
     const created = await request(app).post('/api/teams').send({
       name: 'New Octocats',
@@ -72,16 +72,13 @@ describe('OctoFit API contract', () => {
       members: [user._id.toString()],
     });
 
-    expect(created.status).toBe(201);
-    const updatedUser = await User.findById(user._id);
-    const retainedPreviousTeam = await Team.findById(previousTeam._id);
-    const newTeam = await Team.findById(created.body.team._id);
-    expect(updatedUser?.team?.toString()).toBe(created.body.team._id);
-    expect(retainedPreviousTeam?.members.map((memberId) => memberId.toString())).not.toContain(user._id.toString());
-    expect(newTeam?.members.map((memberId) => memberId.toString())).toContain(user._id.toString());
+    expect(created.status).toBe(409);
+    expect(await Team.exists({ name: 'New Octocats' })).toBeNull();
+    expect((await User.findById(user._id))?.team?.toString()).toBe(previousTeam._id.toString());
+    expect((await Team.findById(previousTeam._id))?.members.map((memberId) => memberId.toString())).toContain(user._id.toString());
   });
   it('rolls back team creation if a membership update fails', async () => {
-    const { user, team: previousTeam } = await createUserAndTeam('Mona', 'mona@example.com', 'Mona');
+    const user = await User.create({ name: 'Mona', email: 'mona@example.com', fitnessGoal: 'endurance' });
     const updateUsers = vi.spyOn(User, 'updateMany').mockRejectedValueOnce(new Error('simulated membership update failure'));
 
     try {
@@ -93,8 +90,7 @@ describe('OctoFit API contract', () => {
 
       expect(response.status).toBe(500);
       expect(await Team.exists({ name: 'Failed Octocats' })).toBeNull();
-      expect((await User.findById(user._id))?.team?.toString()).toBe(previousTeam._id.toString());
-      expect((await Team.findById(previousTeam._id))?.members.map((memberId) => memberId.toString())).toContain(user._id.toString());
+      expect((await User.findById(user._id))?.team).toBeUndefined();
     } finally {
       updateUsers.mockRestore();
     }
