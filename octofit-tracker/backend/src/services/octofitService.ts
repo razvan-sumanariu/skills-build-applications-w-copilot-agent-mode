@@ -49,11 +49,32 @@ export async function createTeam(input: unknown) {
   const rawMembers = body.members ?? [];
   if (!Array.isArray(rawMembers)) throw httpError(400, 'members must be an array of user IDs');
   const members = [...new Set(rawMembers.map((member) => requireObjectId(member, 'members')))];
-  if (members.length > 0 && (await User.countDocuments({ _id: { $in: members } })) !== members.length) {
-    throw httpError(404, 'One or more members were not found');
-  }
+  if (members.length === 0) return Team.create({ name, mascot, members });
 
-  return Team.create({ name, mascot, members });
+  const session = await User.startSession();
+  let createdTeam: InstanceType<typeof Team> | undefined;
+  try {
+    await session.withTransaction(async () => {
+      const users = await User.find({ _id: { $in: members } }).select('_id team').session(session);
+      if (users.length !== members.length) throw httpError(404, 'One or more members were not found');
+
+      [createdTeam] = await Team.create([{ name, mascot, members }], { session });
+      const previousTeams = [...new Set(users.flatMap((user) => user.team ? [user.team.toString()] : []))];
+      if (previousTeams.length > 0) {
+        await Team.updateMany(
+          { _id: { $in: previousTeams } },
+          { $pull: { members: { $in: members } } },
+          { session },
+        );
+      }
+      const result = await User.updateMany({ _id: { $in: members } }, { $set: { team: createdTeam._id } }, { session });
+      if (result.modifiedCount !== members.length) throw httpError(404, 'One or more members were not found');
+    });
+    if (!createdTeam) throw new Error('Team creation did not complete');
+    return createdTeam;
+  } finally {
+    await session.endSession();
+  }
 }
 
 export async function getLeaderboard() {
